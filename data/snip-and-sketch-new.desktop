@@ -1,0 +1,10 @@
+[Desktop Entry]
+# Launcher used by the Win+Shift+S hotkey (KDE Plasma binds shortcuts to
+# desktop files). Hidden from menus.
+Type=Application
+Name=Snip & Sketch for Linux: New snip
+Exec=snip --no-editor
+Icon=snip-and-sketch
+Terminal=false
+NoDisplay=true
+StartupNotify=false

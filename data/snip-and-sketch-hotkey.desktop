@@ -1,0 +1,12 @@
+[Desktop Entry]
+# Installed to /etc/xdg/autostart: registers the Win+Shift+S hotkey once per
+# user at login, then never touches it again (so users can change or remove it).
+Type=Application
+Name=Snip & Sketch for Linux hotkey setup
+Exec=snip-hotkey install --once --quiet
+Icon=snip-and-sketch
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-Phase=Applications
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-phase=2

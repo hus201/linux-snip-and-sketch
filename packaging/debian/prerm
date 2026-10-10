@@ -1,0 +1,11 @@
+#!/bin/sh
+# On uninstall, remove the hotkey for whoever is logged in (it would point at
+# a missing program otherwise). Upgrades leave it alone.
+set -e
+
+if [ "$1" = "remove" ]; then
+    /usr/libexec/snip-and-sketch/session-hotkey remove || true
+    pkill -x snip 2>/dev/null || true
+fi
+
+exit 0

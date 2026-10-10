@@ -1,0 +1,43 @@
+#!/bin/sh
+# session-hotkey install|remove — run `snip-hotkey` for every user with an
+# active desktop session (plus whoever ran sudo/pkexec), inside their own
+# D-Bus session. Called as root by the .deb and .rpm install scripts so the
+# Win+Shift+S hotkey works right away; everyone else gets it at their next
+# login via /etc/xdg/autostart. Never fails the package operation.
+
+SNIP_HOTKEY="@CMAKE_INSTALL_FULL_BINDIR@/snip-hotkey"
+
+case "${1:-}" in
+    install) args="install" ;;
+    remove)  args="remove --quiet" ;;
+    *) echo "usage: $0 install|remove" >&2; exit 2 ;;
+esac
+[ -x "$SNIP_HOTKEY" ] || exit 0
+
+desktop_users() {
+    if [ -n "${SUDO_USER:-}" ]; then echo "$SUDO_USER"; fi
+    if [ -n "${PKEXEC_UID:-}" ]; then getent passwd "$PKEXEC_UID" | cut -d: -f1; fi
+    if command -v loginctl >/dev/null 2>&1; then
+        for s in $(loginctl list-sessions --no-legend 2>/dev/null | awk '{print $1}'); do
+            type=$(loginctl show-session "$s" -p Type --value 2>/dev/null || true)
+            case "$type" in
+                x11|wayland) loginctl show-session "$s" -p Name --value 2>/dev/null || true ;;
+            esac
+        done
+    fi
+}
+
+run_as() {  # run_as USER CMD... inside that user's desktop D-Bus session
+    user="$1"; shift
+    uid=$(id -u "$user" 2>/dev/null) || return 0
+    [ "$uid" -ne 0 ] && [ -S "/run/user/$uid/bus" ] || return 0
+    home=$(getent passwd "$user" | cut -d: -f6)
+    runuser -u "$user" -- env HOME="$home" XDG_RUNTIME_DIR="/run/user/$uid" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" "$@" || true
+}
+
+for user in $(desktop_users | sort -u); do
+    # shellcheck disable=SC2086  # $args is intentionally split
+    run_as "$user" "$SNIP_HOTKEY" $args
+done
+exit 0

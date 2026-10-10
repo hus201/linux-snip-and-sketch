@@ -1,0 +1,422 @@
+#!/usr/bin/env bash
+# snip-hotkey — register the Win+Shift+S (Shift+Super+S) hotkey for Snip & Sketch for Linux.
+#
+# Usage: snip-hotkey [install|remove|status] [options]
+#   --command CMD    command the hotkey runs   (default: "<snip path> --no-editor")
+#   --desktop NAME   skip detection: cinnamon, gnome, kde, xfce, mate, lxqt, cosmic
+#   --force          replace a different action already bound to Shift+Super+S
+#   --once           do nothing if this was already done once for this user
+#                    (used by the login autostart entry)
+#   --quiet          only print errors
+#
+# Supported: Cinnamon, GNOME (incl. Ubuntu, Budgie, Pantheon, Unity),
+# KDE Plasma 5/6, Xfce, MATE, LXQt, COSMIC. Prints instructions for
+# sway / i3 / Hyprland / Openbox and anything else.
+set -uo pipefail
+
+NAME="Snip & Sketch for Linux"
+# Names used by earlier versions: such entries are recognised and renamed.
+LEGACY_NAMES=("Snip & Sketch" "Linux Snip & Sketch")
+ACTION="install"
+COMMAND=""
+DESKTOP=""
+FORCE=0
+ONCE=0
+QUIET=0
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}"
+MARKER="$CONFIG_DIR/snip-and-sketch/hotkey-configured"
+
+say()  { [[ $QUIET == 1 ]] || echo "$*"; }
+warn() { echo "snip-hotkey: $*" >&2; }
+die()  { warn "$*"; exit 1; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        install|remove|status) ACTION="$1" ;;
+        --command)  COMMAND="${2:?--command needs a value}"; shift ;;
+        --desktop)  DESKTOP="${2:?--desktop needs a value}"; shift ;;
+        --force)    FORCE=1 ;;
+        --once)     ONCE=1 ;;
+        --quiet|-q) QUIET=1 ;;
+        -h|--help)  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) die "unknown argument: $1 (see --help)" ;;
+    esac
+    shift
+done
+
+[[ $EUID -ne 0 ]] || die "run this as your normal user, not root (hotkeys are per-user settings)"
+[[ $ONCE == 1 && $ACTION == install && -e "$MARKER" ]] && exit 0
+
+if [[ -z "$COMMAND" ]]; then
+    snip_bin="$(command -v snip || true)"
+    [[ -n "$snip_bin" ]] || snip_bin=/usr/bin/snip
+    COMMAND="$snip_bin --no-editor"
+fi
+
+# True if a gsettings string value (e.g. "'Snip & Sketch for Linux'") is our entry.
+is_ours() {
+    local n
+    for n in "$NAME" "${LEGACY_NAMES[@]}"; do [[ "$1" == "'$n'" ]] && return 0; done
+    return 1
+}
+
+mark_done() { mkdir -p "$(dirname "$MARKER")" && echo "$ACTION $(date -Iseconds)" > "$MARKER"; }
+
+# ------------------------------------------------------------------ detection
+detect_desktop() {
+    local d="${XDG_CURRENT_DESKTOP:-} ${XDG_SESSION_DESKTOP:-} ${DESKTOP_SESSION:-}"
+    d="${d,,}"
+    case "$d" in
+        *cinnamon*)                          echo cinnamon; return ;;
+        *cosmic*)                            echo cosmic; return ;;
+        *kde*|*plasma*)                      echo kde; return ;;
+        *xfce*)                              echo xfce; return ;;
+        *mate*)                              echo mate; return ;;
+        *lxqt*)                              echo lxqt; return ;;
+        *budgie*|*gnome*|*unity*|*pantheon*|*ubuntu*|*pop*) echo gnome; return ;;
+        *sway*)                              echo sway; return ;;
+        *hyprland*)                          echo hyprland; return ;;
+        *i3*)                                echo i3; return ;;
+    esac
+    # No session variables (e.g. run from the package installer): look at
+    # what this user is running.
+    local uid; uid="$(id -u)"
+    local p
+    for p in cinnamon:cinnamon cosmic-comp:cosmic plasmashell:kde xfce4-session:xfce \
+             mate-session:mate lxqt-session:lxqt budgie-panel:gnome gnome-shell:gnome \
+             gala:gnome sway:sway Hyprland:hyprland i3:i3; do
+        if pgrep -u "$uid" -x "${p%%:*}" >/dev/null 2>&1; then echo "${p##*:}"; return; fi
+    done
+    echo unknown
+}
+
+# Look for something else on Shift+Super+S in a gsettings-based desktop.
+gsettings_conflict() {  # $@: schemas to scan
+    local s
+    for s in "$@"; do
+        gsettings list-recursively "$s" 2>/dev/null
+    done | grep -iE "'(<shift><super>|<super><shift>|<shift><mod4>|<mod4><shift>)s'" \
+         | grep -v "Snip & Sketch" | head -n 3  # ours, under any of its names
+}
+
+# ================================================================== Cinnamon
+cinnamon() {
+    local schema=org.cinnamon.desktop.keybindings
+    local base=/org/cinnamon/desktop/keybindings/custom-keybindings
+    have gsettings || die "gsettings not found"
+    local list names slot="" n
+    list="$(gsettings get $schema custom-list)"
+    names="$(sed -e 's/^@as //' -e "s/[][',]/ /g" <<<"$list")"
+    for n in $names; do
+        is_ours "$(gsettings get $schema.custom-keybinding:$base/$n/ name 2>/dev/null)" && slot=$n
+    done
+    case "$ACTION" in
+    status)
+        if [[ -n "$slot" ]]; then
+            echo "Cinnamon: $(gsettings get $schema.custom-keybinding:$base/$slot/ binding) → $(gsettings get $schema.custom-keybinding:$base/$slot/ command)"
+        else echo "Cinnamon: not installed"; fi ;;
+    install)
+        if [[ -z "$slot" ]]; then
+            local c; c="$(gsettings_conflict $schema org.cinnamon.desktop.keybindings.wm org.cinnamon.desktop.keybindings.media-keys)"
+            if [[ -n "$c" ]]; then
+                warn "Shift+Super+S is already used:"$'\n'"$c"
+                [[ $FORCE == 1 ]] || die "use --force to add $NAME anyway"
+            fi
+            local i=0
+            while grep -qw "custom$i" <<<"$names"; do i=$((i + 1)); done
+            slot="custom$i"
+        fi
+        gsettings set $schema.custom-keybinding:$base/$slot/ name "$NAME"
+        gsettings set $schema.custom-keybinding:$base/$slot/ command "$COMMAND"
+        gsettings set $schema.custom-keybinding:$base/$slot/ binding "['<Shift><Super>s']"
+        # Cinnamon reads each command only when custom-list changes, so write
+        # the entry first, then change the list (drop + re-add) to reload it.
+        local others=(); for n in $names; do [[ $n == "$slot" ]] || others+=("'$n'"); done
+        gsettings set $schema custom-list "[$(IFS=,; echo "${others[*]}" | sed 's/,/, /g')]"
+        gsettings set $schema custom-list "[$(IFS=,; echo "${others[*]:+${others[*]},}'$slot'" | sed 's/,/, /g')]"
+        say "Cinnamon: Shift+Super+S → $COMMAND" ;;
+    remove)
+        [[ -n "$slot" ]] || { say "Cinnamon: nothing to remove"; return; }
+        local keep=() ; for n in $names; do [[ $n == "$slot" ]] || keep+=("'$n'"); done
+        gsettings set $schema custom-list "[$(IFS=,; echo "${keep[*]}" | sed 's/,/, /g')]"
+        for k in name command binding; do gsettings reset $schema.custom-keybinding:$base/$slot/ $k; done
+        say "Cinnamon: hotkey removed" ;;
+    esac
+}
+
+# ===================================================== GNOME / Budgie / Unity
+gnome() {
+    local schema=org.gnome.settings-daemon.plugins.media-keys
+    local base=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings
+    have gsettings || die "gsettings not found"
+    gsettings list-keys $schema >/dev/null 2>&1 || die "GNOME settings daemon schema not found"
+    local list paths ours="" p
+    list="$(gsettings get $schema custom-keybindings)"
+    paths="$(grep -o "'[^']*'" <<<"$list" | tr -d "'")"
+    for p in $paths; do
+        is_ours "$(gsettings get $schema.custom-keybinding:$p name 2>/dev/null)" && ours=$p
+    done
+    case "$ACTION" in
+    status)
+        if [[ -n "$ours" ]]; then
+            echo "GNOME: $(gsettings get $schema.custom-keybinding:$ours binding) → $(gsettings get $schema.custom-keybinding:$ours command)"
+        else echo "GNOME: not installed"; fi ;;
+    install)
+        if [[ -z "$ours" ]]; then
+            local c; c="$(gsettings_conflict org.gnome.desktop.wm.keybindings org.gnome.shell.keybindings $schema)"
+            if [[ -n "$c" ]]; then
+                warn "Shift+Super+S is already used:"$'\n'"$c"
+                [[ $FORCE == 1 ]] || die "use --force to add $NAME anyway"
+            fi
+            ours="$base/snip-and-sketch/"
+            local all=(); for p in $paths; do all+=("'$p'"); done; all+=("'$ours'")
+            gsettings set $schema custom-keybindings "[$(IFS=,; echo "${all[*]}" | sed 's/,/, /g')]"
+        fi
+        gsettings set $schema.custom-keybinding:$ours name "$NAME"
+        gsettings set $schema.custom-keybinding:$ours command "$COMMAND"
+        gsettings set $schema.custom-keybinding:$ours binding '<Shift><Super>s'
+        say "GNOME: Shift+Super+S → $COMMAND" ;;
+    remove)
+        [[ -n "$ours" ]] || { say "GNOME: nothing to remove"; return; }
+        local keep=(); for p in $paths; do [[ $p == "$ours" ]] || keep+=("'$p'"); done
+        if [[ ${#keep[@]} -eq 0 ]]; then gsettings reset $schema custom-keybindings
+        else gsettings set $schema custom-keybindings "[$(IFS=,; echo "${keep[*]}" | sed 's/,/, /g')]"; fi
+        for k in name command binding; do gsettings reset $schema.custom-keybinding:$ours $k; done
+        say "GNOME: hotkey removed" ;;
+    esac
+}
+
+# ====================================================================== MATE
+mate() {
+    local base=/org/mate/desktop/keybindings
+    local schema=org.mate.control-center.keybinding
+    have gsettings && have dconf || die "gsettings/dconf not found"
+    local slot="" n
+    for n in $(dconf list $base/ 2>/dev/null | tr -d /); do
+        is_ours "$(gsettings get $schema:$base/$n/ name 2>/dev/null)" && slot=$n
+    done
+    case "$ACTION" in
+    status)
+        if [[ -n "$slot" ]]; then
+            echo "MATE: $(gsettings get $schema:$base/$slot/ binding) → $(gsettings get $schema:$base/$slot/ action)"
+        else echo "MATE: not installed"; fi ;;
+    install)
+        if [[ -z "$slot" ]]; then
+            local c; c="$(gsettings_conflict org.mate.Marco.global-keybindings org.mate.Marco.window-keybindings org.mate.SettingsDaemon.plugins.media-keys)"
+            if [[ -n "$c" ]]; then
+                warn "Shift+Super+S is already used:"$'\n'"$c"
+                [[ $FORCE == 1 ]] || die "use --force to add $NAME anyway"
+            fi
+            local i=0
+            while dconf list $base/ 2>/dev/null | grep -qx "custom$i/"; do i=$((i + 1)); done
+            slot="custom$i"
+        fi
+        gsettings set $schema:$base/$slot/ name "$NAME"
+        gsettings set $schema:$base/$slot/ action "$COMMAND"
+        gsettings set $schema:$base/$slot/ binding '<Mod4><Shift>s'
+        say "MATE: Shift+Super+S → $COMMAND" ;;
+    remove)
+        [[ -n "$slot" ]] || { say "MATE: nothing to remove"; return; }
+        dconf reset -f $base/$slot/
+        say "MATE: hotkey removed" ;;
+    esac
+}
+
+# ====================================================================== Xfce
+xfce() {
+    have xfconf-query || die "xfconf-query not found"
+    local ch=xfce4-keyboard-shortcuts prop current
+    prop="/commands/custom/<Shift><Super>s"
+    current="$(xfconf-query -c $ch -p "$prop" 2>/dev/null || true)"
+    case "$ACTION" in
+    status)
+        if [[ -n "$current" ]]; then echo "Xfce: Shift+Super+S → $current"; else echo "Xfce: not installed"; fi ;;
+    install)
+        if [[ -n "$current" && "$current" != *snip* && $FORCE != 1 ]]; then
+            die "Shift+Super+S already runs '$current' (use --force to replace it)"
+        fi
+        # Xfce also accepts the modifiers in the other order — clear that variant.
+        xfconf-query -c $ch -p "/commands/custom/<Super><Shift>s" -r 2>/dev/null || true
+        xfconf-query -c $ch -p "$prop" -n -t string -s "$COMMAND" 2>/dev/null \
+            || xfconf-query -c $ch -p "$prop" -s "$COMMAND"
+        say "Xfce: Shift+Super+S → $COMMAND" ;;
+    remove)
+        if [[ "$current" == *snip* ]]; then
+            xfconf-query -c $ch -p "$prop" -r
+            say "Xfce: hotkey removed"
+        else say "Xfce: nothing to remove"; fi ;;
+    esac
+}
+
+# ================================================================ KDE Plasma
+kde() {
+    local file="$CONFIG_DIR/kglobalshortcutsrc"
+    local id=snip-and-sketch-new.desktop
+    local version="${KDE_SESSION_VERSION:-}" kwrite
+    if [[ -z "$version" ]]; then
+        if have kwriteconfig6; then version=6; else version=5; fi
+    fi
+    kwrite="kwriteconfig$version"
+    have "$kwrite" || kwrite="$(command -v kwriteconfig6 || command -v kwriteconfig5 || true)"
+    [[ -n "$kwrite" ]] || die "kwriteconfig5/6 not found"
+
+    # Plasma binds global shortcuts to .desktop files; make sure ours exists.
+    local apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+    local found="" dir dirs
+    IFS=: read -ra dirs <<<"${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+    for dir in "${XDG_DATA_HOME:-$HOME/.local/share}" "${dirs[@]}"; do
+        [[ -e "$dir/applications/$id" ]] && found=1
+    done
+
+    local group=() ; [[ $version == 6 ]] && group=(--group services)
+    case "$ACTION" in
+    status)
+        if grep -q "^\[\(services\]\[\)\?$id\]" "$file" 2>/dev/null; then
+            echo "KDE: $(sed -n "/$id\]/,/^\[/p" "$file" | grep '^_launch=')"
+        else echo "KDE: not installed"; fi ;;
+    install)
+        if [[ -z "$found" || "$COMMAND" != *"/usr/bin/snip --no-editor" ]]; then
+            mkdir -p "$apps"
+            cat > "$apps/$id" <<EOF
+[Desktop Entry]
+Type=Application
+Name=$NAME: New snip
+Exec=$COMMAND
+Icon=snip-and-sketch
+NoDisplay=true
+EOF
+        fi
+        if grep -qiE '(^|[=,\t])Meta\+Shift\+S(,|$)' "$file" 2>/dev/null \
+           && ! grep -q "$id" "$file" 2>/dev/null && [[ $FORCE != 1 ]]; then
+            die "Meta+Shift+S is already used in $file (use --force to add it anyway)"
+        fi
+        if [[ $version == 6 ]]; then
+            "$kwrite" --file kglobalshortcutsrc "${group[@]}" --group "$id" --key _launch "Meta+Shift+S"
+        else
+            "$kwrite" --file kglobalshortcutsrc --group "$id" --key _k_friendly_name "$NAME"
+            "$kwrite" --file kglobalshortcutsrc --group "$id" --key _launch "Meta+Shift+S,none,$NAME: New snip"
+        fi
+        say "KDE Plasma $version: Meta+Shift+S → $COMMAND (log out and back in if it doesn't work yet)" ;;
+    remove)
+        "$kwrite" --file kglobalshortcutsrc "${group[@]}" --group "$id" --key _launch --delete 2>/dev/null || true
+        "$kwrite" --file kglobalshortcutsrc --group "$id" --key _launch --delete 2>/dev/null || true
+        "$kwrite" --file kglobalshortcutsrc --group "$id" --key _k_friendly_name --delete 2>/dev/null || true
+        [[ -e "$apps/$id" ]] && rm -f "$apps/$id"
+        say "KDE: hotkey removed" ;;
+    esac
+}
+
+# ===================================================================== LXQt
+lxqt() {
+    local file="$CONFIG_DIR/lxqt/globalkeyshortcuts.conf"
+    local section="Shift%2BMeta%2BS.700"
+    local exec_line="Exec=${COMMAND// /, }"
+    case "$ACTION" in
+    status)
+        if grep -qE "^Comment=(Linux )?Snip & Sketch( for Linux)?$" "$file" 2>/dev/null; then echo "LXQt: Shift+Meta+S → $COMMAND"
+        else echo "LXQt: not installed"; fi ;;
+    install)
+        mkdir -p "$(dirname "$file")"; touch "$file"
+        if grep -q '^\[Shift%2BMeta%2BS\.' "$file" && ! grep -qE "^Comment=(Linux )?Snip & Sketch( for Linux)?$" "$file" && [[ $FORCE != 1 ]]; then
+            die "Shift+Meta+S is already used in $file (use --force to add it anyway)"
+        fi
+        lxqt_strip "$file"
+        printf '\n[%s]\nComment=%s\nEnabled=true\n%s\n' "$section" "$NAME" "$exec_line" >> "$file"
+        lxqt_reload
+        say "LXQt: Shift+Meta+S → $COMMAND" ;;
+    remove)
+        [[ -e "$file" ]] && lxqt_strip "$file" && lxqt_reload
+        say "LXQt: hotkey removed" ;;
+    esac
+}
+lxqt_strip() {  # drop our section from the config
+    awk '
+        /^\[/ { if (buf != "" && !ours) printf "%s", buf; buf = ""; ours = 0 }
+        { buf = buf $0 "\n"; if ($0 ~ /^Comment=(Linux )?Snip & Sketch( for Linux)?$/) ours = 1 }
+        END { if (!ours) printf "%s", buf }' "$1" \
+        | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}' > "$1.tmp" && mv "$1.tmp" "$1"  # trim trailing blanks
+}
+lxqt_reload() {  # (-f: the name is longer than pgrep's 15-char limit)
+    local pat='(^|/)lxqt-globalkeysd( |$)'
+    pgrep -u "$(id -u)" -f "$pat" >/dev/null || return 0
+    pkill -u "$(id -u)" -f "$pat"; sleep 1
+    pgrep -u "$(id -u)" -f "$pat" >/dev/null || (setsid lxqt-globalkeysd >/dev/null 2>&1 &)
+}
+
+# ==================================================================== COSMIC
+cosmic() {
+    local file="$CONFIG_DIR/cosmic/com.system76.CosmicSettings.Shortcuts/v1/custom"
+    local entry="    (
+        modifiers: [
+            Super,
+            Shift,
+        ],
+        key: \"s\",
+    ): Spawn(\"$COMMAND\"),"
+    case "$ACTION" in
+    status)
+        if grep -q 'Spawn(".*snip' "$file" 2>/dev/null; then echo "COSMIC: Super+Shift+S → $COMMAND"
+        else echo "COSMIC: not installed"; fi ;;
+    install)
+        mkdir -p "$(dirname "$file")"
+        cosmic_strip "$file"
+        if [[ ! -s "$file" ]] || ! grep -q '[^[:space:]{}]' "$file"; then
+            printf '{\n%s\n}\n' "$entry" > "$file"
+        else
+            # Insert before the final closing brace of the RON map.
+            local tmp="$file.tmp"
+            awk -v entry="$entry" '{ lines[NR] = $0 } END {
+                last = NR; while (last > 0 && lines[last] !~ /^}/) last--
+                for (i = 1; i <= NR; i++) { if (i == last) print entry; print lines[i] } }' "$file" > "$tmp" \
+                && mv "$tmp" "$file"
+        fi
+        say "COSMIC: Super+Shift+S → $COMMAND" ;;
+    remove)
+        [[ -e "$file" ]] && cosmic_strip "$file"
+        say "COSMIC: hotkey removed" ;;
+    esac
+}
+cosmic_strip() {  # drop any entry that spawns snip
+    [[ -e "$1" ]] || return 0
+    awk '
+        /^    \(/ { inentry = 1; buf = "" }
+        inentry { buf = buf $0 "\n"; if ($0 ~ /^    \):/) { inentry = 0; if (buf !~ /Spawn\(".*snip/) printf "%s", buf }; next }
+        { print }' "$1" > "$1.tmp" && mv "$1.tmp" "$1"
+}
+
+# ============================================================ tiling WMs etc.
+manual() {
+    local de="$1"
+    [[ $ACTION == status ]] && { echo "$de: not managed by snip-hotkey"; return; }
+    [[ $ACTION == remove ]] && { say "Remove the $NAME line from your $de config."; return; }
+    cat >&2 <<EOF
+snip-hotkey: can't configure "$de" automatically. Add this to your config:
+
+  sway / i3   (~/.config/sway/config or ~/.config/i3/config):
+      bindsym Mod4+Shift+s exec $COMMAND
+  Hyprland    (~/.config/hypr/hyprland.conf):
+      bind = SUPER SHIFT, S, exec, $COMMAND
+  Openbox     (~/.config/openbox/rc.xml, inside <keyboard>):
+      <keybind key="W-S-s"><action name="Execute"><command>$COMMAND</command></action></keybind>
+  Anything else: bind Shift+Super+S to:  $COMMAND
+EOF
+    return 2
+}
+
+# ======================================================================= main
+[[ -n "$DESKTOP" ]] || DESKTOP="$(detect_desktop)"
+case "$DESKTOP" in
+    cinnamon) cinnamon ;;
+    gnome|budgie|unity|pantheon|ubuntu) gnome ;;
+    kde|plasma) kde ;;
+    xfce) xfce ;;
+    mate) mate ;;
+    lxqt) lxqt ;;
+    cosmic) cosmic ;;
+    *) manual "$DESKTOP"; exit $? ;;
+esac
+status=$?
+[[ $status -eq 0 && $ACTION != status ]] && mark_done
+exit $status

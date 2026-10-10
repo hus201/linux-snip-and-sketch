@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Minimal copy of Cinnamon's keybinding schemas: only what snip-hotkey uses. -->
+<schemalist>
+  <schema id="org.cinnamon.desktop.keybindings" path="/org/cinnamon/desktop/keybindings/">
+    <key name="custom-list" type="as"><default>[]</default></key>
+  </schema>
+  <schema id="org.cinnamon.desktop.keybindings.custom-keybinding">
+    <key name="name" type="s"><default>''</default></key>
+    <key name="command" type="s"><default>''</default></key>
+    <key name="binding" type="as"><default>[]</default></key>
+  </schema>
+  <schema id="org.cinnamon.desktop.keybindings.wm" path="/org/cinnamon/desktop/keybindings/wm/">
+    <key name="switch-to-workspace-1" type="as"><default>[]</default></key>
+  </schema>
+</schemalist>

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Minimal copy of GNOME's media-keys / wm keybinding schemas: only what snip-hotkey uses. -->
+<schemalist>
+  <schema id="org.gnome.settings-daemon.plugins.media-keys" path="/org/gnome/settings-daemon/plugins/media-keys/">
+    <key name="custom-keybindings" type="as"><default>[]</default></key>
+  </schema>
+  <schema id="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding">
+    <key name="name" type="s"><default>''</default></key>
+    <key name="command" type="s"><default>''</default></key>
+    <key name="binding" type="s"><default>''</default></key>
+  </schema>
+  <schema id="org.gnome.desktop.wm.keybindings" path="/org/gnome/desktop/wm/keybindings/">
+    <key name="switch-to-workspace-1" type="as"><default>[]</default></key>
+  </schema>
+</schemalist>

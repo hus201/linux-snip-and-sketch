@@ -1,0 +1,30 @@
+[Desktop Entry]
+Type=Application
+Name=Snip & Sketch for Linux
+GenericName=Screenshot Tool
+Comment=Capture, annotate and share screenshots
+Exec=snip --app %f
+Icon=snip-and-sketch
+Terminal=false
+Categories=Utility;Graphics;
+Keywords=screenshot;snip;snipping;capture;annotate;screen;
+MimeType=image/png;image/jpeg;image/bmp;
+StartupNotify=true
+StartupWMClass=snip-and-sketch
+Actions=snip;snip-free;snip-window;snip-full;
+
+[Desktop Action snip]
+Name=New snip
+Exec=snip
+
+[Desktop Action snip-free]
+Name=Freeform snip
+Exec=snip --mode free
+
+[Desktop Action snip-window]
+Name=Window snip
+Exec=snip --mode window
+
+[Desktop Action snip-full]
+Name=Fullscreen snip
+Exec=snip --mode full

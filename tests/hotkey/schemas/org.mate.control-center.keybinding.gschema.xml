@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Minimal copy of MATE's custom keybinding schema: only what snip-hotkey uses. -->
+<schemalist>
+  <schema id="org.mate.control-center.keybinding">
+    <key name="name" type="s"><default>''</default></key>
+    <key name="action" type="s"><default>''</default></key>
+    <key name="binding" type="s"><default>''</default></key>
+  </schema>
+  <schema id="org.mate.Marco.global-keybindings" path="/org/mate/marco/global-keybindings/">
+    <key name="run-command-terminal" type="s"><default>''</default></key>
+  </schema>
+</schemalist>
