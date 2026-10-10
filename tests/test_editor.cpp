@@ -234,30 +234,37 @@ private slots:
             empty.show();
             QVERIFY(empty.grab().save(prefix + QStringLiteral("empty.png")));
 
+            // The demo report, annotated the way you would: circle the peak,
+            // highlight the takeaway.
             EditorWindow w(nullptr);
-            w.resize(1000, 680);
             w.show();
-            w.setImage(testImage());
+            w.setImage(demoReport());
+            w.resize(1040, 720);
             QApplication::processEvents();
             Canvas *c = canvasOf(w);
             c->zoomToFit();
-            c->setInk(Canvas::PenTool, QColor(0xe8, 0x11, 0x23), 4);
-            QList<QPointF> circle;
-            for (int i = 0; i <= 40; ++i)
-                circle << QPointF(600 + 110 * std::cos(i / 40.0 * 2 * M_PI), 355 + 95 * std::sin(i / 40.0 * 2 * M_PI));
-            drag(c, circle);
+            button(w, QStringLiteral("Pen"))->click();  // active pen → palette
+            auto *popup = w.findChild<InkPopup *>();
+            QVERIFY(popup);
+            popup->findChildren<QAbstractButton *>().at(3)->click();  // red
+            QVERIFY(popup->grab().save(prefix + QStringLiteral("palette.png")));
+            popup->hide();
+            QList<QPointF> ring;
+            for (int i = 0; i <= 48; ++i) {
+                const qreal a = -1.9 + i / 48.0 * 2.15 * M_PI;  // slightly overlapping, hand-drawn look
+                ring << QPointF(475 + 82 * std::cos(a), 300 + 162 * std::sin(a));
+            }
+            drag(c, ring);
             c->setTool(Canvas::HighlighterTool);
-            drag(c, {{40, 185}, {380, 186}});
+            drag(c, {{58, 484}, {300, 485}, {545, 484}});
             c->setTool(Canvas::PenTool);
+            QApplication::processEvents();
             QVERIFY(w.grab().save(prefix + QStringLiteral("editor.png")));
 
-            button(w, QStringLiteral("Pen"))->click();
-            if (auto *popup = w.findChild<InkPopup *>()) {
-                QVERIFY(popup->grab().save(prefix + QStringLiteral("popup.png")));
-                popup->hide();
-            }
             button(w, QStringLiteral("Crop"))->click();
-            drag(c, {{800, 500}, {700, 430}});
+            drag(c, {{0, 0}, {40, 130}});
+            drag(c, {{900, 560}, {860, 455}});
+            QApplication::processEvents();
             QVERIFY(w.grab().save(prefix + QStringLiteral("crop.png")));
             discardChanges(w);
         }

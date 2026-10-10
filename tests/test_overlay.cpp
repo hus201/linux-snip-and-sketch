@@ -148,6 +148,29 @@ private slots:
         QCOMPARE(img.size(), QSize(600, 400));  // 300×200 logical at 200 %
         QCOMPARE(img.devicePixelRatio(), 2.0);
     }
+
+    void screenshots()
+    {
+        // Renders the overlay over a fake desktop (never the real screen)
+        // when SNIP_SCREENSHOT_DIR is set.
+        const QString dir = qEnvironmentVariable("SNIP_SCREENSHOT_DIR");
+        if (dir.isEmpty())
+            QSKIP("set SNIP_SCREENSHOT_DIR=/some/dir to render the overlay");
+        const ScreenShot shot{nullptr, QRect(0, 0, 1280, 720), demoDesktop()};
+
+        SnipOverlay window(shot, QStringLiteral("window"), true, true);  // toolbar + window highlight
+        window.resize(1280, 720);
+        window.setWindows({QRect(150, 70, 960, 560)});
+        window.setMode(QStringLiteral("window"));
+        mouse(&window, QEvent::MouseMove, {600, 330}, Qt::NoButton);
+        QVERIFY(window.grab().save(dir + QStringLiteral("/overlay-window.png")));
+
+        SnipOverlay rect(shot, QStringLiteral("rect"), true, true);  // mid-drag selection
+        rect.resize(1280, 720);
+        mouse(&rect, QEvent::MouseButtonPress, {196, 146});
+        mouse(&rect, QEvent::MouseMove, {1078, 580});
+        QVERIFY(rect.grab().save(dir + QStringLiteral("/overlay-rect.png")));
+    }
 };
 
 QTEST_MAIN(TestOverlay)

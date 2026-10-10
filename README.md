@@ -4,31 +4,40 @@ A clone of the Windows **Snip & Sketch / Snipping Tool**: press **Win+Shift+S**,
 pick an area, and the snip is on your clipboard. Click the notification to mark
 it up with a pen, highlighter, eraser and crop tool, then save or copy it.
 
-Native C++/Qt 6 app; works on **X11 and Wayland**.
+Native C++/Qt 6 app for X11 desktops. Wayland support is built in but still experimental.
+
+![The editor with a snip, annotated with the pen and highlighter](docs/screenshots/editor.png)
+
+## Screenshots
+
+| Win+Shift+S: pick a window… | …or drag any area |
+|---|---|
+| ![Window snip: the window under the cursor is highlighted, with the mode toolbar at the top](docs/screenshots/overlay-window.png) | ![Rectangle snip: dragging a selection, with its size shown](docs/screenshots/overlay-rect.png) |
+
+| Crop with handles | Follows your dark theme |
+|---|---|
+| ![Crop mode: handles around the kept area, Cancel and Apply in the toolbar](docs/screenshots/crop.png) | ![The editor in a dark theme](docs/screenshots/dark-editor.png) |
+
+<img src="docs/screenshots/palette.png" alt="Pen palette with colour swatches and a size slider" width="240" align="right">
+
+**Ink palette:** click the active pen or highlighter again to choose a colour and size. Your choices are remembered.
+
+<br clear="right">
 
 ## Install
 
 Download from the [Releases](https://github.com/hus201/linux-snip-and-sketch/releases) page:
 
-| File | For |
-|---|---|
-| `snip-and-sketch_<version>_amd64.deb` | Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Pop!_OS, Zorin, elementary… |
-| `snip-and-sketch-<version>-1.fc41.x86_64.rpm` | Fedora 41+ (and other recent dnf-based distros) |
-| `snip-and-sketch-<version>-1.x86_64.rpm` | openSUSE Tumbleweed |
-| `Snip_and_Sketch_for_Linux-<version>-x86_64.AppImage` | Any distro — no install needed |
+`snip-and-sketch_<version>_amd64.deb` works on Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Pop!_OS, Zorin, elementary and similar distros:
 
 ```bash
-sudo apt install ./snip-and-sketch_1.0.0_amd64.deb             # Debian / Ubuntu / Mint
-sudo dnf install ./snip-and-sketch-1.0.0-1.fc41.x86_64.rpm      # Fedora
-sudo zypper install ./snip-and-sketch-1.0.0-1.x86_64.rpm        # openSUSE
+sudo apt install ./snip-and-sketch_1.0.0_amd64.deb
 ```
 
-The `.deb` and `.rpm` set up **Shift+Super+S** for you, both for the user installing it
-and for everyone else at their next login. With the AppImage, run this once:
+The package sets up **Shift+Super+S** for you, both for the user installing it
+and for everyone else at their next login.
 
-```bash
-./Snip_and_Sketch_for_Linux-1.0.0-x86_64.AppImage --setup-hotkey install
-```
+On Fedora or openSUSE, build an RPM yourself; see [RPM](#rpm) below.
 
 ## Usage
 
@@ -94,7 +103,7 @@ Behaviour:
 
 ## Notes
 
-- **Wayland:** the screen is captured through `xdg-desktop-portal`. GNOME may ask permission the first time. Window snip is X11-only, because Wayland doesn't let apps list other windows.
+- **Wayland (experimental, untested so far):** the screen is captured through `xdg-desktop-portal`, and GNOME may ask permission the first time. Window snip is X11-only, because Wayland doesn't let apps list other windows.
 - **Clipboard:** after a snip, the app keeps running in the background until something else is copied. Without that, the snip would vanish from the clipboard on desktops that have no clipboard manager.
 - **Single instance:** pressing the hotkey while a snip is already open just brings that snip back to the front.
 
@@ -109,7 +118,7 @@ cd build && cpack -G DEB         # → snip-and-sketch_<version>_amd64.deb
 
 ### RPM
 
-The spec is `packaging/rpm/snip-and-sketch.spec`. It works for Fedora and openSUSE, and for COPR / OBS:
+Releases ship only the `.deb` for now. The spec, `packaging/rpm/snip-and-sketch.spec`, lets you build an RPM yourself for Fedora or openSUSE (it also works for COPR / OBS):
 
 ```bash
 packaging/rpm/build-rpm.sh                              # on Fedora/openSUSE (needs rpmbuild)
@@ -145,10 +154,10 @@ Handy variations:
 ctest --test-dir build -L unit                          # only the Qt suites
 tests/hotkey/test_hotkey.sh cinnamon gnome              # only some desktops
 build/test_canvas eraserHitsWhatWasDrawn                # a single test
-SNIP_SCREENSHOT_DIR=/tmp/shots QT_QPA_PLATFORM=offscreen build/test_editor screenshots
+tests/update-screenshots.sh build                       # regenerate docs/screenshots/
 ```
 
-The last command renders the editor (light and dark) to PNGs for a quick visual check. CI uploads these with every build.
+`update-screenshots.sh` renders the README screenshots from a built-in demo desktop and report, never your real screen. Run it after UI changes so the docs stay current.
 
 **Fixing a bug?** Add a test that fails without the fix first. Several existing tests guard real bugs found this way:
 - eraser missing corners
@@ -158,11 +167,10 @@ The last command renders the editor (light and dark) to PNGs for a quick visual 
 
 ## Releasing
 
-CI (`.github/workflows/build.yml`) runs on every push:
-1. Builds on Ubuntu 22.04 (Qt 6.2) and runs the unit tests.
-2. Produces the `.deb` and the AppImage.
-3. Installs the `.deb` on clean Ubuntu 22.04/24.04 and Debian 12/13 containers.
-4. Builds the RPMs on Fedora 41 and openSUSE Tumbleweed (running the tests in `%check`) and install-tests them.
+CI (`.github/workflows/build.yml`) runs **only when a `v*` tag is pushed**. Ordinary commits and pull requests don't trigger it. On a tag it:
+1. Builds on Ubuntu 22.04 (Qt 6.2), so the `.deb` installs on 22.04 and newer.
+2. Runs all the tests.
+3. Builds the `.deb` and publishes it as a GitHub Release.
 
 To publish a release:
 1. Bump `VERSION` in `CMakeLists.txt`.
@@ -173,7 +181,7 @@ To publish a release:
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
-The packages are attached to a GitHub Release automatically.
+If any test fails, nothing is published.
 
 ## License
 

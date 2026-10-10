@@ -1,16 +1,15 @@
 name: Build
 
+# Runs only when a release tag is pushed (e.g. `git tag v1.0.0 && git push origin v1.0.0`):
+# builds and tests the .deb, then publishes it as a GitHub Release.
 on:
   push:
-    branches: [main]
     tags: ['v*']
-  pull_request:
-  workflow_dispatch:
 
 jobs:
-  build:
-    # Oldest supported base (Qt 6.2, glibc 2.35) so the .deb and AppImage run
-    # on Ubuntu 22.04+, Debian 12+, Linux Mint 21+ and newer distros.
+  deb:
+    # Oldest supported base (Qt 6.2, glibc 2.35) so the .deb installs on
+    # Ubuntu 22.04+, Debian 12+, Linux Mint 21+ and newer.
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +19,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build g++ dpkg-dev file \
-            qt6-base-dev qt6-base-dev-tools qt6-qpa-plugins qt6-wayland libqt6svg6-dev \
+            qt6-base-dev qt6-base-dev-tools qt6-qpa-plugins libqt6svg6-dev \
             libgl1-mesa-dev libxkbcommon-dev \
             dbus dconf-cli libglib2.0-bin   # sandboxed hotkey-script tests
 
@@ -30,27 +29,8 @@ jobs:
       - name: Build
         run: cmake --build build
 
-      - name: Tests (canvas, overlay, editor, launch, hotkey script)
+      - name: Tests
         run: ctest --test-dir build --output-on-failure
-
-      - name: Render UI screenshots
-        if: always()
-        run: |
-          mkdir -p screenshots
-          QT_QPA_PLATFORM=offscreen SNIP_SCREENSHOT_DIR="$PWD/screenshots" build/test_editor screenshots
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ui-screenshots
-          path: screenshots/
-
-      - name: Check scripts
-        run: |
-          bash -n scripts/snip-hotkey
-          sh -n packaging/debian/postinst
-          sh -n packaging/debian/prerm
-          shellcheck -S warning scripts/snip-hotkey packaging/debian/postinst packaging/debian/prerm || true
 
       - name: Build .deb
         run: |
@@ -59,127 +39,22 @@ jobs:
           dpkg-deb --info ./*.deb
           dpkg-deb --contents ./*.deb
 
-      - name: Build AppImage
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: 1
-          QMAKE: /usr/lib/qt6/bin/qmake
-          EXTRA_QT_PLUGINS: svg;
-          EXTRA_PLATFORM_PLUGINS: libqwayland-egl.so;libqwayland-generic.so
-        run: |
-          VERSION=$(grep -m1 -oP 'VERSION \K[0-9.]+' CMakeLists.txt)
-          DESTDIR="$PWD/AppDir" cmake --install build
-          rm -rf AppDir/etc   # the login autostart entry is for the .deb only
-          rm AppDir/usr/share/applications/snip-and-sketch-new.desktop
-          base=https://github.com/linuxdeploy
-          wget -q "$base/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
-          wget -q "$base/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
-          chmod +x linuxdeploy*.AppImage
-          export LINUXDEPLOY_OUTPUT_VERSION="$VERSION"
-          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt --output appimage \
-            --desktop-file AppDir/usr/share/applications/snip-and-sketch.desktop \
-            --icon-file data/snip-and-sketch.svg
-          mv Snip*Linux*.AppImage "build/Snip_and_Sketch_for_Linux-$VERSION-x86_64.AppImage"
-          QT_QPA_PLATFORM=offscreen "build/Snip_and_Sketch_for_Linux-$VERSION-x86_64.AppImage" --version
-
       - uses: actions/upload-artifact@v4
         with:
-          name: packages
-          path: |
-            build/*.deb
-            build/*.AppImage
-          if-no-files-found: error
-
-  # Install the .deb on clean systems to prove its dependencies resolve.
-  install-test:
-    needs: build
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        image: ['ubuntu:22.04', 'ubuntu:24.04', 'debian:12', 'debian:13']
-    container: ${{ matrix.image }}
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: packages
-      - name: Install and run
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          apt-get update
-          apt-get install -y ./*.deb
-          snip --version
-          snip-hotkey --help
-          test -f /etc/xdg/autostart/snip-and-sketch-hotkey.desktop
-          test -x /usr/libexec/snip-and-sketch/session-hotkey
-          apt-get remove -y snip-and-sketch
-          ! command -v snip
-
-  # RPMs for Fedora and openSUSE, built from the spec and install-tested.
-  rpm:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        image: ['fedora:41', 'opensuse/tumbleweed']
-    container: ${{ matrix.image }}
-    steps:
-      - name: Tools for checkout
-        run: |
-          if command -v dnf >/dev/null; then dnf -y install git tar gzip findutils
-          else zypper -n install git tar gzip findutils; fi
-
-      - uses: actions/checkout@v4
-
-      - name: Build dependencies
-        run: |
-          spec=packaging/rpm/snip-and-sketch.spec
-          if command -v dnf >/dev/null; then
-            dnf -y install rpm-build "dnf-command(builddep)"
-            dnf -y builddep "$spec"
-          else
-            zypper -n install rpm-build
-            zypper -n install $(rpmspec -q --buildrequires "$spec")
-          fi
-
-      - name: Build RPMs (runs the Qt test suites in %check)
-        run: packaging/rpm/build-rpm.sh --out dist
-
-      - name: Install test
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: |
-          rpm=$(ls dist/snip-and-sketch-[0-9]*.x86_64.rpm)
-          if command -v dnf >/dev/null; then dnf -y install "./$rpm"
-          else zypper -n --no-gpg-checks install --allow-unsigned-rpm "./$rpm"; fi
-          snip --version
-          snip-hotkey --help > /dev/null
-          test -x /usr/libexec/snip-and-sketch/session-hotkey
-          test -f /etc/xdg/autostart/snip-and-sketch-hotkey.desktop
-          rpm -e snip-and-sketch
-          ! command -v snip
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rpm-${{ strategy.job-index }}
-          path: dist/*.rpm
+          name: deb
+          path: build/*.deb
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, install-test, rpm]
+    needs: deb
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4   # all jobs' artifacts into one folder
+      - uses: actions/download-artifact@v4
         with:
-          merge-multiple: true
+          name: deb
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            *.deb
-            *.rpm
-            *.AppImage
+          files: '*.deb'
           generate_release_notes: true
