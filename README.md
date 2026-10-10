@@ -36,7 +36,3 @@ Wayland support is experimental.
 ## Building
 
 See [docs/development.md](docs/development.md).
-
-## License
-
-[MIT](LICENSE). Not affiliated with Microsoft.

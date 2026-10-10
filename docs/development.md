@@ -20,13 +20,3 @@ ctest --test-dir build --output-on-failure
 Suites: `canvas`, `overlay`, `editor`, `launch` (Qt, off-screen), `hotkey` (sandboxed; never touches your settings), `packaging`.
 
 After UI changes, refresh the README images: `tests/update-screenshots.sh build`.
-
-## Release
-
-Bump the version in `CMakeLists.txt` and `packaging/rpm/snip-and-sketch.spec`, then:
-
-```bash
-git tag v1.0.0 && git push origin v1.0.0
-```
-
-CI runs only on tags: it tests, builds the `.deb` and `.rpm`, and publishes them.
