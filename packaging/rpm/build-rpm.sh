@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Build the RPMs from this source tree with rpmbuild.
 #   packaging/rpm/build-rpm.sh [--out DIR]     (default: dist/)
-# Needs rpmbuild and the BuildRequires from the spec; on a Debian/Ubuntu host
-# use build-in-container.sh instead.
+# Needs rpmbuild and the BuildRequires from the spec (on Fedora:
+# `sudo dnf install rpm-build && sudo dnf builddep packaging/rpm/snip-and-sketch.spec`);
+# from any other distro use build-in-container.sh instead.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

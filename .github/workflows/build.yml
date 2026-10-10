@@ -1,7 +1,8 @@
 name: Build
 
 # Runs only when a release tag is pushed (e.g. `git tag v1.0.0 && git push origin v1.0.0`):
-# builds and tests the .deb, then publishes it as a GitHub Release.
+# builds and tests the .deb and the Fedora .rpm, then publishes both as a
+# GitHub Release.
 on:
   push:
     tags: ['v*']
@@ -45,16 +46,54 @@ jobs:
           path: build/*.deb
           if-no-files-found: error
 
+  rpm:
+    # Oldest supported Fedora, so the RPM also installs on newer releases.
+    runs-on: ubuntu-latest
+    container: fedora:43
+    steps:
+      - name: Tools for checkout
+        run: dnf -y install git tar gzip findutils
+
+      - uses: actions/checkout@v4
+
+      - name: Build dependencies
+        run: |
+          dnf -y install rpm-build "dnf-command(builddep)"
+          dnf -y builddep packaging/rpm/snip-and-sketch.spec
+
+      - name: Build RPM (runs the Qt test suites in %check)
+        run: packaging/rpm/build-rpm.sh --out dist
+
+      - name: Install test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          dnf -y install ./dist/snip-and-sketch-[0-9]*.x86_64.rpm
+          snip --version
+          snip-hotkey --help > /dev/null
+          test -x /usr/libexec/snip-and-sketch/session-hotkey
+          test -f /etc/xdg/autostart/snip-and-sketch-hotkey.desktop
+          rpm -e snip-and-sketch
+          ! command -v snip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: dist/snip-and-sketch-[0-9]*.x86_64.rpm
+          if-no-files-found: error
+
   release:
-    needs: deb
+    needs: [deb, rpm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4   # the deb and rpm artifacts into one folder
         with:
-          name: deb
+          merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          files: '*.deb'
+          files: |
+            *.deb
+            *.rpm
           generate_release_notes: true

@@ -28,16 +28,18 @@ Native C++/Qt 6 app for X11 desktops. Wayland support is built in but still expe
 
 Download from the [Releases](https://github.com/hus201/linux-snip-and-sketch/releases) page:
 
-`snip-and-sketch_<version>_amd64.deb` works on Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Pop!_OS, Zorin, elementary and similar distros:
+| File | For |
+|---|---|
+| `snip-and-sketch_<version>_amd64.deb` | Ubuntu 22.04+, Linux Mint 21+, Debian 12+, Pop!_OS, Zorin, elementary… |
+| `snip-and-sketch-<version>-1.fc43.x86_64.rpm` | Fedora 43 and newer |
 
 ```bash
-sudo apt install ./snip-and-sketch_1.0.0_amd64.deb
+sudo apt install ./snip-and-sketch_1.0.0_amd64.deb         # Debian / Ubuntu / Mint
+sudo dnf install ./snip-and-sketch-1.0.0-1.fc43.x86_64.rpm  # Fedora
 ```
 
-The package sets up **Shift+Super+S** for you, both for the user installing it
+Both packages set up **Shift+Super+S** for you, both for the user installing it
 and for everyone else at their next login.
-
-On Fedora or openSUSE, build an RPM yourself; see [RPM](#rpm) below.
 
 ## Usage
 
@@ -118,12 +120,13 @@ cd build && cpack -G DEB         # → snip-and-sketch_<version>_amd64.deb
 
 ### RPM
 
-Releases ship only the `.deb` for now. The spec, `packaging/rpm/snip-and-sketch.spec`, lets you build an RPM yourself for Fedora or openSUSE (it also works for COPR / OBS):
+The Fedora spec is `packaging/rpm/snip-and-sketch.spec`; it also works for COPR.
 
 ```bash
-packaging/rpm/build-rpm.sh                              # on Fedora/openSUSE (needs rpmbuild)
-packaging/rpm/build-in-container.sh                     # from any distro with Docker/Podman
-packaging/rpm/build-in-container.sh opensuse/tumbleweed
+sudo dnf install rpm-build && sudo dnf builddep packaging/rpm/snip-and-sketch.spec
+packaging/rpm/build-rpm.sh                              # on Fedora
+packaging/rpm/build-in-container.sh                     # from any distro with Docker/Podman (Fedora 43)
+packaging/rpm/build-in-container.sh fedora:44           # another Fedora release
 ```
 
 The container build also installs the RPM in a clean system and checks it runs. Results go to `dist/`.
@@ -168,9 +171,9 @@ tests/update-screenshots.sh build                       # regenerate docs/screen
 ## Releasing
 
 CI (`.github/workflows/build.yml`) runs **only when a `v*` tag is pushed**. Ordinary commits and pull requests don't trigger it. On a tag it:
-1. Builds on Ubuntu 22.04 (Qt 6.2), so the `.deb` installs on 22.04 and newer.
-2. Runs all the tests.
-3. Builds the `.deb` and publishes it as a GitHub Release.
+1. Builds on Ubuntu 22.04 (Qt 6.2) and runs all the tests, then builds the `.deb`. Built there, it installs on 22.04 and newer.
+2. Builds the RPM on Fedora 43, running the Qt tests during the build, then installs and uninstalls it on a clean system.
+3. Publishes both packages as a GitHub Release.
 
 To publish a release:
 1. Bump `VERSION` in `CMakeLists.txt`.

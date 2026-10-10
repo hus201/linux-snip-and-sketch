@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Build (and install-test) the RPM inside a Fedora or openSUSE container, from
-# any Linux host with Docker or Podman. Results land in dist/.
+# Build (and install-test) the Fedora RPM inside a Fedora container, from any
+# Linux host with Docker or Podman. Results land in dist/.
 #
-#   packaging/rpm/build-in-container.sh                       # fedora:41
-#   packaging/rpm/build-in-container.sh opensuse/tumbleweed
+#   packaging/rpm/build-in-container.sh              # fedora:43
+#   packaging/rpm/build-in-container.sh fedora:44    # another Fedora release
 #
 # If your user can't talk to Docker, run it with sudo; the RPMs are still
 # handed back owned by you.
 set -euo pipefail
 
-IMAGE="${1:-fedora:41}"
+IMAGE="${1:-fedora:43}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENGINE="$(command -v podman || command -v docker || true)"
 [[ -n "$ENGINE" ]] || { echo "Docker or Podman is required" >&2; exit 1; }
@@ -18,15 +18,8 @@ mkdir -p "$ROOT/dist"
 
 "$ENGINE" run --rm -e OWNER="$OWNER" \
     -v "$ROOT:/src:ro" -v "$ROOT/dist:/out" "$IMAGE" bash -euc '
-    if command -v dnf >/dev/null; then
-        dnf -y -q install rpm-build "dnf-command(builddep)" >/dev/null
-        dnf -y -q builddep /src/packaging/rpm/snip-and-sketch.spec >/dev/null
-        install_rpm() { dnf -y -q install "$@"; }
-    else
-        zypper -n -q install rpm-build >/dev/null
-        zypper -n -q install $(rpmspec -q --buildrequires /src/packaging/rpm/snip-and-sketch.spec) >/dev/null
-        install_rpm() { zypper -n -q --no-gpg-checks install --allow-unsigned-rpm "$@"; }
-    fi
+    dnf -y -q install rpm-build "dnf-command(builddep)" >/dev/null
+    dnf -y -q builddep /src/packaging/rpm/snip-and-sketch.spec >/dev/null
     cp -a /src /work
     rm -rf /work/build /work/dist
     out=$(mktemp -d)
@@ -34,7 +27,7 @@ mkdir -p "$ROOT/dist"
 
     echo "== install test"
     rpm=$(ls "$out"/snip-and-sketch-[0-9]*.$(uname -m).rpm)
-    install_rpm "$rpm"
+    dnf -y -q install "$rpm"
     QT_QPA_PLATFORM=offscreen snip --version
     snip-hotkey --help >/dev/null && echo "snip-hotkey ok"
     test -x /usr/libexec/snip-and-sketch/session-hotkey && echo "session-hotkey ok"

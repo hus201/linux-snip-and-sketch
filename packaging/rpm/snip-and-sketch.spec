@@ -1,7 +1,7 @@
-# RPM package for Fedora and openSUSE (also usable on COPR / OBS).
+# RPM package for Fedora (also usable on COPR).
 #
 #   Build:  packaging/rpm/build-rpm.sh            (needs rpmbuild)
-#           packaging/rpm/build-in-container.sh   (any distro with Docker)
+#           packaging/rpm/build-in-container.sh   (any distro with Docker/Podman)
 #
 # Keep Version in sync with project(VERSION) in CMakeLists.txt — the
 # "packaging" test fails when they differ.
@@ -30,11 +30,7 @@ Recommends:     xprop
 Recommends:     xwininfo
 # Screen capture on Wayland
 Recommends:     xdg-desktop-portal
-%if 0%{?suse_version}
-Recommends:     qt6-wayland
-%else
 Recommends:     qt6-qtwayland
-%endif
 
 %description
 Snip & Sketch for Linux captures a rectangle, a freeform shape, a window or
