@@ -16,7 +16,7 @@ export QT_QPA_PLATFORM=offscreen SNIP_SCREENSHOT_DIR="$TMP"
 "$BUILD/test_editor" screenshots >/dev/null
 
 mkdir -p "$OUT"
-for name in overlay-window overlay-rect editor dark-editor crop palette; do
+for name in overlay-window overlay-rect editor dark-editor crop; do
     cp "$TMP/$name.png" "$OUT/$name.png"
 done
 echo "Updated: $(cd "$OUT" && ls *.png | tr '\n' ' ')"
