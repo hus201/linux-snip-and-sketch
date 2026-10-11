@@ -74,7 +74,7 @@ jobs:
           test -x /usr/libexec/snip-and-sketch/session-hotkey
           test -f /etc/xdg/autostart/snip-and-sketch-hotkey.desktop
           rpm -e snip-and-sketch
-          ! command -v snip
+          test ! -e /usr/bin/snip   # not `command -v`: bash remembers the old path
 
       - uses: actions/upload-artifact@v4
         with:
